@@ -154,17 +154,15 @@ jobs:
         grep -E "^CONFIG_TARGET_" .config
         # 如果 target 不是 armvirt，强制纠正并重新 defconfig
         if ! grep -q "^CONFIG_TARGET_armvirt_64_DEVICE_generic=y" .config; then
-          echo "⚠️ 检测到 target 偏离，强制纠正为 armvirt_64_generic"
+          echo "检测到 target 偏离，强制纠正为 armvirt_64_generic"
           sed -i '/^CONFIG_TARGET_/d' .config
           sed -i '/^# CONFIG_TARGET_/d' .config
-          cat >> .config <<'TARGETFIX'
-CONFIG_TARGET_armvirt=y
-CONFIG_TARGET_armvirt_64=y
-CONFIG_TARGET_armvirt_64_DEVICE_generic=y
-# CONFIG_TARGET_x86 is not set
-# CONFIG_TARGET_armsr is not set
-# CONFIG_TARGET_MULTI_PROFILE is not set
-TARGETFIX
+          echo "CONFIG_TARGET_armvirt=y" >> .config
+          echo "CONFIG_TARGET_armvirt_64=y" >> .config
+          echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
+          echo "# CONFIG_TARGET_x86 is not set" >> .config
+          echo "# CONFIG_TARGET_armsr is not set" >> .config
+          echo "# CONFIG_TARGET_MULTI_PROFILE is not set" >> .config
           make defconfig
           echo "=== 纠正后的 target 行 ==="
           grep -E "^CONFIG_TARGET_" .config
