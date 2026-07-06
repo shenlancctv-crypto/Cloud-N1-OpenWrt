@@ -1,50 +1,50 @@
 # 云编译 N1 OpenWrt 固件
 
-**说明**：
+**说明**：11
 - 本项目使用 Github Actions 下载 [Lean](https://github.com/coolsnowwolf/lede) 的 `Openwrt` 源码仓库，进行云编译。
 - 本项目使用定时编译（北京时间每周日下午4点开始运行编译）及触发编译（更新 `README.md`、 `script.sh`、 `config.sh`后可开始编译）两种方式。
 - 本项目编译固件适配斐讯 N1 盒子，如需刷机，可直接下载 [releases](https://github.com/huangqian8/Cloud-N1-OpenWrt/releases/latest) 内固件。
 - 本项目编译配置如下：
 
 **添加编译**（默认未勾选，自选！）
-  - [x] 修改架构适配斐讯 N1 盒子
-    - [x] Target System —— QEMU ARM Virtual Machine
-    - [x] Subtarget —— 64-bit ARM machines
-  - [x] `luci-app-docker`
-  - [x] `luci-app-dockerman`
-  - [x] `luci-theme-opentomcat`
-  - [x] `luci-app-adguardhome`
-  - [x] `luci-app-amlogic`
+ - [x] 修改架构适配斐讯 N1 盒子
+ - [x] Target System —— QEMU ARM Virtual Machine
+ - [x] Subtarget —— 64-bit ARM machines
+ - [x] `luci-app-docker`
+ - [x] `luci-app-dockerman`
+ - [x] `luci-theme-opentomcat`
+ - [x] `luci-app-adguardhome`
+ - [x] `luci-app-amlogic`
 
 **默认编译**（默认勾选，未取消！）
-  - [x] `luci-app-autoreboot`
-  - [x] `luci-app-filetransfer`
-  - [x] `luci-app-nlbwmon`
-  - [x] `luci-app-ssr-plus`
-    - [x] `Include ChinaDNS-NG`
-    - [x] `Include MosDNS`
-    - [x] `Include Shadowsocks Simple Obfs Plugin`
-    - [x] `Include ShadowsocksR Libev Client`
-  - [x] `luci-app-vlmcsd`
-  - [x] `luci-app-wol`
+ - [x] `luci-app-autoreboot`
+ - [x] `luci-app-filetransfer`
+ - [x] `luci-app-nlbwmon`
+ - [x] `luci-app-ssr-plus`
+ - [x] `Include ChinaDNS-NG`
+ - [x] `Include MosDNS`
+ - [x] `Include Shadowsocks Simple Obfs Plugin`
+ - [x] `Include ShadowsocksR Libev Client`
+ - [x] `luci-app-vlmcsd`
+ - [x] `luci-app-wol`
 
 **强制编译**（默认勾选，无法取消！）
-  - [x] `luci-app-firewall`
+ - [x] `luci-app-firewall`
 
 **精简编译**（默认勾选，取消！）
-  - [x] `luci-app-accesscontrol`
-  - [x] `luci-app-arpbind`
-  - [x] `luci-app-ddns`
-  - [x] `Include rclone-webui`
-  - [x] `Include rclone-ng (another webui)`
-  - [x] `luci-app-turboacc`
-    - [x] `Include Flow Offload`
-    - [x] `Include Shortcut-FE CM`
-    - [x] `Include BBR CCA`
-    - [x] `Include Pdnsd`
-  - [x] `UnblockNeteaseMusic Golang Version`
-  - [x] `luci-app-upnp`
-  - [x] `luci-app-vsftpd`
+ - [x] `luci-app-accesscontrol`
+ - [x] `luci-app-arpbind`
+ - [x] `luci-app-ddns`
+ - [x] `Include rclone-webui`
+ - [x] `Include rclone-ng (another webui)`
+ - [x] `luci-app-turboacc`
+ - [x] `Include Flow Offload`
+ - [x] `Include Shortcut-FE CM`
+ - [x] `Include BBR CCA`
+ - [x] `Include Pdnsd`
+ - [x] `UnblockNeteaseMusic Golang Version`
+ - [x] `luci-app-upnp`
+ - [x] `luci-app-vsftpd`
 
 **更新日志**
 - 20260515 修改打包脚本，获取实际内核版本，输出到 release 说明
