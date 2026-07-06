@@ -2,7 +2,8 @@ name: Cloud N1 OpenWrt
 
 # ==============================================================================
 # 斐讯 N1 盒子 OpenWrt 云编译工作流
-# 架构：Amlogic S905D / ARM64（armvirt_64_generic）
+# 架构：Amlogic S905D / ARM64（armsr_armv8_generic）
+# LEDE master 已用 armsr 替代 armvirt
 # 场景：校园网主路由模式（默认），可切旁路由
 # 源码：Lean's LEDE  打包：ophub/flippy-openwrt-actions
 # ==============================================================================
@@ -16,26 +17,20 @@ on:
       - 'script.sh'
       - 'config.sh'
       - '.github/workflows/cloud-n1-openwrt.yaml'
-  workflow_dispatch:        # 允许手动触发，调试阶段很有用
+  workflow_dispatch:
   schedule:
-    - cron: 0 8 * * 0       # 每周 UTC 0点（北京时间 8点）自动编译一次
+    - cron: 0 8 * * 0
 
 env:
-  # ========================= 源码与脚本 =========================
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  SCRIPT_SH: script.sh       # feeds 更新前运行，拉取外部插件
-  CONFIG_SH: config.sh       # feeds install 后运行，生成 .config
-
-  # ========================= 内核与打包 =========================
-  # 内核版本写 .y 结尾表示自动解析该大版本下最新具体版本
+  SCRIPT_SH: script.sh
+  CONFIG_SH: config.sh
   KERNEL_VERSION: 6.1.y
   KERNEL_REPO_URL: breakingbadboy/OpenWrt
   KERNEL_TAG: stable
-  PACKAGE_SOC: s905d          # N1 的 SoC 型号
-  KERNEL_AUTO_LATEST: true    # 自动取 6.1.y 系列最新
-
-  # ========================= 其他 =========================
+  PACKAGE_SOC: s905d
+  KERNEL_AUTO_LATEST: true
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
 
@@ -46,10 +41,6 @@ jobs:
 
     steps:
 
-    # ============================================================================
-    # 步骤 1：释放磁盘空间
-    # GitHub Actions runner 默认约 14GB 可用，编译 OpenWrt 需要约 8-10GB
-    # ============================================================================
     - name: Free Disk Space
       uses: jlumbroso/free-disk-space@v1.3.1
       with:
@@ -61,17 +52,13 @@ jobs:
         swap-storage: true
 
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: main
 
     - name: Disk space check
       run: echo "Free space:" && df -h
 
-    # ============================================================================
-    # 步骤 2：安装编译依赖
-    # 依赖列表来自 Lean's LEDE 官方 README，不要随意删减
-    # ============================================================================
     - name: Install build dependencies
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -92,9 +79,6 @@ jobs:
           uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
         sudo timedatectl set-timezone "$TZ"
 
-    # ============================================================================
-    # 步骤 3：克隆 OpenWrt 源码
-    # ============================================================================
     - name: Clone source code
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
@@ -104,97 +88,71 @@ jobs:
         echo "DATE=$(date "+%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "tag_name=$(date +%Y%m%d)" >> $GITHUB_ENV
 
-    # ============================================================================
-    # 步骤 4：运行 script.sh（feeds 更新前）
-    # 这里拉取所有外部插件到 package/ 目录，并做系统级定制修改
-    # ============================================================================
     - name: Run script.sh (pre-feeds customization)
       run: |
         [ -e files ] && mv files openwrt/files
         chmod +x $SCRIPT_SH
         ./$SCRIPT_SH
 
-    # ============================================================================
-    # 步骤 5：更新并安装 feeds
-    # helloworld 源提供 PassWall 等科学上网插件
-    # ============================================================================
     - name: Update and install feeds
       run: |
         cd openwrt
         echo "src-git helloworld https://github.com/fw876/helloworld.git" >> feeds.conf.default
         ./scripts/feeds update -a
-        # 修复 xfsprogs 编译问题（Lean 源码已知问题）
         sed -i 's/TARGET_CFLAGS += -DHAVE_MAP_SYNC/TARGET_CFLAGS += -DHAVE_MAP_SYNC -D_LARGEFILE64_SOURCE/' \
           feeds/packages/utils/xfsprogs/Makefile 2>/dev/null || true
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # ============================================================================
-    # 步骤 6：运行 config.sh 生成 .config
-    # 这里会做架构强制锁定（防止 defconfig 跑偏到 x86）
-    # ============================================================================
     - name: Generate .config via config.sh
       run: |
         chmod +x $CONFIG_SH
         ./$CONFIG_SH
 
-    # ============================================================================
-    # 步骤 7：defconfig + 下载依赖
-    # make defconfig 会把种子配置展开为完整配置
-    # 这里加一道架构验证，确保 target 仍然是 armvirt
-    # ============================================================================
+    # ==============================================================================
+    # 架构验证 + defconfig + 下载
+    # LEDE master 的 defconfig 在遇到递归依赖时会 fallback 到 x86
+    # 这里做强制纠正：defconfig 后如果不是 armsr_armv8，清空重写再 defconfig
+    # ==============================================================================
     - name: Expand config and download
       run: |
         cd openwrt
-        # 架构锁定验证：defconfig 后再次确认 target 是 armvirt
         echo "=== defconfig 前的 target 行 ==="
-        grep -E "^CONFIG_TARGET_" .config || echo "（无 target 行，可能是空配置）"
+        grep -E "^CONFIG_TARGET_" .config || echo "(empty)"
         make defconfig
         echo "=== defconfig 后的 target 行 ==="
         grep -E "^CONFIG_TARGET_" .config
-        # 如果 target 不是 armvirt，强制纠正并重新 defconfig
-        if ! grep -q "^CONFIG_TARGET_armvirt_64_DEVICE_generic=y" .config; then
-          echo "检测到 target 偏离，强制纠正为 armvirt_64_generic"
-          sed -i '/^CONFIG_TARGET_/d' .config
-          sed -i '/^# CONFIG_TARGET_/d' .config
-          echo "CONFIG_TARGET_armvirt=y" >> .config
-          echo "CONFIG_TARGET_armvirt_64=y" >> .config
-          echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
+        if ! grep -q "^CONFIG_TARGET_armsr_armv8_DEVICE_generic=y" .config; then
+          echo "检测到 target 偏离，强制纠正为 armsr_armv8_generic"
+          > .config
+          echo "CONFIG_TARGET_armsr=y" >> .config
+          echo "CONFIG_TARGET_armsr_armv8=y" >> .config
+          echo "CONFIG_TARGET_armsr_armv8_DEVICE_generic=y" >> .config
+          echo "CONFIG_TARGET_ROOTFS_TARGZ=y" >> .config
           echo "# CONFIG_TARGET_x86 is not set" >> .config
-          echo "# CONFIG_TARGET_armsr is not set" >> .config
           echo "# CONFIG_TARGET_MULTI_PROFILE is not set" >> .config
           make defconfig
           echo "=== 纠正后的 target 行 ==="
           grep -E "^CONFIG_TARGET_" .config
         fi
-        # 下载所有依赖包
+        if ! grep -q "^CONFIG_TARGET_armsr_armv8_DEVICE_generic=y" .config; then
+          echo "FATAL: 架构纠正失败，仍然是 x86，请检查 script.sh 递归依赖"
+          exit 1
+        fi
         make download -j8
-        # 清理小于 1KB 的下载文件（通常是失败的残留）
         find dl -size -1024c -exec rm -f {} \;
 
-    # ============================================================================
-    # 步骤 8：编译固件
-    # 先多线程编译，失败则单线程重试以暴露完整错误日志
-    # ============================================================================
     - name: Compile firmware
       id: compile
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
-        echo "=== 编译完成，空间占用 ==="
+        echo "=== 编译完成 ==="
         df -h
-        du -h --max-depth=1 ./ --exclude=build_dir --exclude=bin
-        du -h --max-depth=1 ./build_dir 2>/dev/null || true
-        du -h --max-depth=1 ./bin 2>/dev/null || true
-        # 清理 build_dir 释放空间给后续打包步骤
         rm -rf ./build_dir
         echo "status=success" >> $GITHUB_OUTPUT
 
-    # ============================================================================
-    # 步骤 9：解析内核版本
-    # 如果 KERNEL_VERSION 以 .y 结尾，自动解析该系列最新版本
-    # ============================================================================
     - name: Resolve kernel version
       if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
@@ -203,59 +161,45 @@ jobs:
           echo "RESOLVED_KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
           exit 0
         fi
-
         kernel_series="$(echo "$KERNEL_VERSION" | awk -F '.' '{print $1"."$2}')"
         kernel_regex="${kernel_series//./\\.}"
         kernel_api="https://github.com/${KERNEL_REPO_URL}/releases/expanded_assets/${KERNEL_TAG}"
         latest_version="$(curl -fsSL "$kernel_api" | \
           grep -oP "(?<=[/>])${kernel_regex}\.[0-9]+(?=\.tar\.gz)" | \
           sort -urV | head -n 1)"
-
         if [[ -z "$latest_version" ]]; then
-          echo "❌ 无法从 $kernel_api 解析到内核版本 ${kernel_series}.y"
-          echo "请检查 breakingbadboy/OpenWrt 仓库是否仍维持 kernel_stable tag"
+          echo "无法从 $kernel_api 解析内核版本 ${kernel_series}.y"
           exit 1
         fi
-
-        echo "✅ 解析到最新内核版本: $latest_version"
+        echo "解析到最新内核版本: $latest_version"
         echo "RESOLVED_KERNEL_VERSION=$latest_version" >> $GITHUB_ENV
 
-    # ============================================================================
-    # 步骤 10：打包为 N1 可刷写的 .img.gz 固件
-    # 这是核心步骤：ophub 的 action 会把 armvirt 的 tar.gz rootfs
-    # 和 Flippy 预编译内核一起打包成各 SoC 的 .img 固件
-    # ============================================================================
     - name: Package as N1 firmware
       if: steps.compile.outputs.status == 'success' && !cancelled()
       uses: ophub/flippy-openwrt-actions@main
       env:
-        # 只抓 armvirt 产物，不抓 x86（防止架构偏差时误打包）
-        OPENWRT_ARMVIRT: openwrt/bin/targets/armvirt/64/*.tar.gz
+        # armsr 产物路径：bin/targets/armsr/armv8/*.tar.gz
+        OPENWRT_ARMVIRT: openwrt/bin/targets/armsr/armv8/*.tar.gz
         PACKAGE_SOC: s905d
         KERNEL_REPO_URL: ${{ env.KERNEL_REPO_URL }}
         KERNEL_VERSION_NAME: ${{ env.RESOLVED_KERNEL_VERSION }}
         KERNEL_AUTO_LATEST: false
-        # 使用我们自己的默认 IP，覆盖打包脚本默认的 192.168.1.1
         OPENWRT_IP: 192.168.2.10
         WHOAMI: shenlan
 
-    # ============================================================================
-    # 步骤 11：整理输出文件
-    # ============================================================================
     - name: Organize output files
       id: organize
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/armvirt/64/ 2>/dev/null || {
-          echo "⚠️ armvirt/64 目录不存在，检查编译产物路径"
+        cd openwrt/bin/targets/armsr/armv8/ 2>/dev/null || {
+          echo "armsr/armv8 目录不存在，检查产物路径"
           ls -la openwrt/bin/targets/
           exit 1
         }
-        # 清理不需要的中间文件（注意用 generic 不是 default）
         rm -rf packages \
-               openwrt-armvirt-64-generic.manifest \
-               openwrt-armvirt-64-Image \
-               openwrt-armvirt-64-generic-kernel.bin \
+               openwrt-armsr-armv8-generic.manifest \
+               openwrt-armsr-armv8-Image \
+               openwrt-armsr-armv8-generic-kernel.bin \
                sha256sums version.buildinfo feeds.buildinfo 2>/dev/null || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
@@ -269,11 +213,6 @@ jobs:
             ${{ env.FIRMWARE }}/*.*
             ${{ env.PACKAGED_OUTPUTPATH }}/*.*
 
-    # ============================================================================
-    # 步骤 12：发布到 GitHub Releases
-    # 需要 secrets.actions_release（Personal Access Token，有 repo 权限）
-    # 如果没配置 token，固件仍然在 Artifacts 里可下载
-    # ============================================================================
     - name: Create GitHub release
       uses: ncipollo/release-action@v1
       if: steps.organize.outputs.status == 'success' && !cancelled()
@@ -291,30 +230,23 @@ jobs:
 
           **打包日期：** ${{ env.PACKAGED_OUTPUTDATE }}
           **内核版本：** ${{ env.RESOLVED_KERNEL_VERSION }}
+          **架构：** armsr_armv8_generic（ARM64 / Amlogic S905D）
           **默认 IP：** 192.168.2.10
           **默认账号：** root
           **默认密码：** password
+          **WiFi SSID：** N1-OpenWrt
+          **WiFi 密码：** n1campus2026
 
           ## 刷机方式
 
-          1. 下载 `openwrt_s905d_n1_*.img.gz` 文件
-          2. 解压得到 `.img` 文件
+          1. 下载 openwrt_s905d_n1_*.img.gz
+          2. 解压得到 .img
           3. 用 balenaEtcher 写入 U 盘
           4. U 盘插入 N1 靠近 HDMI 口的 USB 口
-          5. 通电开机，N1 从 U 盘启动
-          6. 浏览器访问 http://192.168.2.10
-          7. 进入「晶晨宝盒」安装到 eMMC
-
-          ## 防检测配置
-
-          刷机后需手动配置 TTL 统一规则，详见 script.sh 注释。
-          UA2F 在「服务 → UA2F」中启用。
-          注意关闭流量卸载（防火墙 → 路由/NAT 卸载 → 禁用）。
+          5. 通电开机
+          6. 浏览器访问 http://192.168.2.10（或连 WiFi: N1-OpenWrt）
         artifacts: "${{ env.FIRMWARE }}/*.*,${{ env.PACKAGED_OUTPUTPATH }}/*.*"
 
-    # ============================================================================
-    # 步骤 13：清理旧 Release（只保留最近 3 个）
-    # ============================================================================
     - name: Remove old releases
       uses: dev-drprasad/delete-older-releases@v0.3.4
       if: steps.organize.outputs.status == 'success'
